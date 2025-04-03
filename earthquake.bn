@@ -1,0 +1,27 @@
+5
+Burglary True False
+Earthquake True False
+Alarm True False
+JohnCalls True False
+MaryCalls True False
+5
+
+Burglary
+0.01 0.99
+
+Earthquake
+0.02 0.98
+
+Alarm Burglary Earthquake
+0.95 0.05
+0.94 0.06
+0.29 0.71
+0.001 0.999
+
+JohnCalls Alarm
+0.9 0.1
+0.05 0.95
+
+MaryCalls Alarm
+0.7 0.3
+0.01 0.99
