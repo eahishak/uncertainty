@@ -4,101 +4,98 @@
 import sys
 import random
 import math
-from collections import defaultdict
 
-# Utility function to parse Bayesian network file
+# Parse .bn file format
 def parse_network(filename):
     with open(filename) as f:
         lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
 
-    idx = 0
-    num_vars = int(lines[idx])
-    idx += 1
+    i = 0
+    num_vars = int(lines[i])
+    i += 1
 
     vars = []
     domains = {}
     while len(vars) < num_vars:
-        parts = lines[idx].split()
+        parts = lines[i].split()
         var = parts[0]
-        vals = parts[1:]
+        domains[var] = parts[1:]
         vars.append(var)
-        domains[var] = vals
-        idx += 1
+        i += 1
 
-    num_cpts = int(lines[idx])
-    idx += 1
-
+    num_cpts = int(lines[i])
+    i += 1
     cpts = {}
-    while idx < len(lines):
-        header = lines[idx].split()
-        idx += 1
 
-        if len(header) == 1:
-            child = header[0]
-            parents = []
-        else:
-            child = header[0]
-            parents = header[1:]
+    while i < len(lines):
+        header = lines[i].split()
+        i += 1
+
+        child = header[0]
+        parents = header[1:] if len(header) > 1 else []
 
         table = []
-        while idx < len(lines) and not lines[idx].startswith('#') and lines[idx]:
-            probs = list(map(float, lines[idx].split()))
-            table.append(probs)
-            idx += 1
-        idx += 1
+        while i < len(lines) and lines[i] and not lines[i].startswith('#'):
+            table.append(list(map(float, lines[i].split())))
+            i += 1
+        i += 1
 
         cpts[child] = {'parents': parents, 'table': table}
 
     return vars, domains, cpts
 
-# Compute full joint probability
+# Compute joint probability
+
 def joint_prob(assignment, vars, domains, cpts):
-    prob = 1.0
+    p = 1.0
     for var in vars:
-        val_index = domains[var].index(assignment[var])
+        val = assignment[var]
+        val_idx = domains[var].index(val)
         parents = cpts[var]['parents']
         table = cpts[var]['table']
 
         if not parents:
-            row = table[0]
+            probs = table[0]
         else:
             parent_vals = [assignment[p] for p in parents]
-            parent_idx = 0
-            multiplier = 1
-            for i, p in enumerate(reversed(parents)):
-                multiplier *= len(domains[p])
-                parent_idx += domains[p].index(parent_vals[len(parents)-1-i]) * (multiplier // len(domains[p]))
-            row = table[parent_idx]
+            index = 0
+            stride = 1
+            for p in reversed(parents):
+                index += domains[p].index(assignment[p]) * stride
+                stride *= len(domains[p])
+            probs = table[index]
 
-        prob *= row[val_index]
-    return prob
+        p *= probs[val_idx]
+    return p
 
 # Exact inference
 
 def exact_inference(query, evidence, vars, domains, cpts):
-    hidden_vars = [v for v in vars if v != query and v not in evidence]
+    hidden = [v for v in vars if v != query and v not in evidence]
     counts = [0.0] * len(domains[query])
 
-    def enumerate_all(i, assignment):
-        if i == len(hidden_vars):
+    def recur(i, partial):
+        if i == len(hidden):
             for j, val in enumerate(domains[query]):
-                assignment[query] = val
-                counts[j] += joint_prob(assignment, vars, domains, cpts)
+                partial[query] = val
+                counts[j] += joint_prob(partial, vars, domains, cpts)
         else:
-            var = hidden_vars[i]
+            var = hidden[i]
             for val in domains[var]:
-                assignment[var] = val
-                enumerate_all(i+1, assignment)
+                partial[var] = val
+                recur(i+1, partial)
 
-    enumerate_all(0, dict(evidence))
+    recur(0, dict(evidence))
     total = sum(counts)
-    return [round(c/total, 4) for c in counts]
+    return [round(x/total, 4) for x in counts]
 
 # Rejection sampling
+
 def rejection_sample(query, evidence, vars, domains, cpts, N):
     counts = [0.0] * len(domains[query])
+
     for _ in range(N):
-        sample = {} 
+        sample = {}
         consistent = True
         for var in vars:
             parents = cpts[var]['parents']
@@ -108,18 +105,18 @@ def rejection_sample(query, evidence, vars, domains, cpts, N):
                 probs = table[0]
             else:
                 parent_vals = [sample[p] for p in parents]
-                parent_idx = 0
-                multiplier = 1
-                for i, p in enumerate(reversed(parents)):
-                    multiplier *= len(domains[p])
-                    parent_idx += domains[p].index(parent_vals[len(parents)-1-i]) * (multiplier // len(domains[p]))
-                probs = table[parent_idx]
+                index = 0
+                stride = 1
+                for p in reversed(parents):
+                    index += domains[p].index(sample[p]) * stride
+                    stride *= len(domains[p])
+                probs = table[index]
 
             r = random.random()
-            cum = 0.0
-            for i, p in enumerate(probs):
-                cum += p
-                if r <= cum:
+            total = 0.0
+            for i, prob in enumerate(probs):
+                total += prob
+                if r <= total:
                     sample[var] = domains[var][i]
                     break
 
@@ -128,75 +125,82 @@ def rejection_sample(query, evidence, vars, domains, cpts, N):
                 break
 
         if consistent:
-            val = sample[query]
-            counts[domains[query].index(val)] += 1
+            idx = domains[query].index(sample[query])
+            counts[idx] += 1
 
     total = sum(counts)
-    return [round(c/total, 4) if total > 0 else 0.0 for c in counts]
+    return [round(x/total, 4) if total > 0 else 0.0 for x in counts]
 
 # Gibbs sampling
+
 def gibbs_sample(query, evidence, vars, domains, cpts, N, burn=100):
-    non_evidence = [v for v in vars if v not in evidence]
     state = dict(evidence)
-    for v in non_evidence:
-        state[v] = random.choice(domains[v])
+    hidden = [v for v in vars if v not in evidence]
+    for var in hidden:
+        state[var] = random.choice(domains[var])
 
     counts = [0.0] * len(domains[query])
-    for i in range(N+burn):
-        for v in non_evidence:
+
+    for i in range(N + burn):
+        for var in hidden:
             dist = []
-            for val in domains[v]:
-                state[v] = val
+            for val in domains[var]:
+                state[var] = val
                 dist.append(joint_prob(state, vars, domains, cpts))
             total = sum(dist)
             r = random.random()
-            cum = 0.0
-            for j, p in enumerate(dist):
-                cum += p/total
-                if r <= cum:
-                    state[v] = domains[v][j]
+            acc = 0
+            for j, val in enumerate(domains[var]):
+                acc += dist[j] / total
+                if r <= acc:
+                    state[var] = val
                     break
 
         if i >= burn:
-            counts[domains[query].index(state[query])] += 1
+            idx = domains[query].index(state[query])
+            counts[idx] += 1
 
     total = sum(counts)
-    return [round(c/total, 4) if total > 0 else 0.0 for c in counts]
+    return [round(x/total, 4) if total > 0 else 0.0 for x in counts]
 
-# Main REPL loop
+# REPL interface
+
 def repl():
-    vars = []
-    domains = {}
-    cpts = {}
-    print("BayesNet REPL. Use 'help' to see commands.")
+    vars, domains, cpts = [], {}, {}
+    print("BayesNet REPL. Type 'help' for commands.")
     while True:
         try:
-            cmd = input("BN > ").strip()
-            if not cmd:
+            line = input("BN > ").strip()
+            if not line:
                 continue
-            if cmd == 'quit':
+            if line == 'quit':
                 break
-            elif cmd.startswith('load'):
-                _, fname = cmd.split()
+            elif line.startswith('load'):
+                fname = line.split(maxsplit=1)[1]
                 vars, domains, cpts = parse_network(fname)
-                print("Loaded network with:", vars)
-            elif cmd.startswith('xquery') or cmd.startswith('rquery') or cmd.startswith('gquery'):
-                parts = cmd.split()
-                query = parts[1]
-                given = parts[3:]
+                print("Network loaded.")
+            elif line.startswith(('xquery', 'rquery', 'gquery')):
+                parts = line.split('|')
+                left = parts[0].split()
+                query = left[1]
                 evidence = {}
-                for ev in given:
-                    k, v = ev.split('=')
-                    evidence[k] = v
-                if cmd.startswith('xquery'):
-                    result = exact_inference(query, evidence, vars, domains, cpts)
-                elif cmd.startswith('rquery'):
-                    result = rejection_sample(query, evidence, vars, domains, cpts, 1000)
+                if len(parts) > 1:
+                    for pair in parts[1].strip().split():
+                        k, v = pair.split('=')
+                        evidence[k] = v
+                if line.startswith('xquery'):
+                    print(exact_inference(query, evidence, vars, domains, cpts))
+                elif line.startswith('rquery'):
+                    print(rejection_sample(query, evidence, vars, domains, cpts, 1000))
                 else:
-                    result = gibbs_sample(query, evidence, vars, domains, cpts, 1000)
-                print(result)
-            elif cmd == 'help':
-                print("Commands: load FILE, xquery Q | X=val ..., rquery Q | X=val ..., gquery Q | X=val ..., quit")
+                    print(gibbs_sample(query, evidence, vars, domains, cpts, 1000))
+            elif line == 'help':
+                print("Commands:")
+                print("  load FILE")
+                print("  xquery Q | X=val ...")
+                print("  rquery Q | X=val ...")
+                print("  gquery Q | X=val ...")
+                print("  quit")
             else:
                 print("Unknown command")
         except Exception as e:
