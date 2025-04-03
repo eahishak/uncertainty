@@ -1,0 +1,2 @@
+load earthquake.bn
+gquery Alarm | MaryCalls=False Burglary=True

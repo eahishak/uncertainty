@@ -1,0 +1,2 @@
+load earthquake.bn
+xquery Burglary

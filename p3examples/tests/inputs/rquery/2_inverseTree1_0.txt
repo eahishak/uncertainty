@@ -1,0 +1,2 @@
+load inverseTree1.bn
+rquery X6 | X2=1 X1=1

@@ -1,0 +1,2 @@
+load earthquake.bn
+gquery JohnCalls | Earthquake=False

@@ -1,0 +1,2 @@
+load tree1.bn
+rquery X3 | X8=0

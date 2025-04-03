@@ -1,0 +1,2 @@
+load inverseTree1.bn
+rquery X3

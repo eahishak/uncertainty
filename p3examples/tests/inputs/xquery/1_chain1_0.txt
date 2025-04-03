@@ -1,0 +1,2 @@
+load chain1.bn
+xquery X5 | X1=1
