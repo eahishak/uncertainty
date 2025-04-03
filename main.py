@@ -4,6 +4,7 @@
 import sys
 import random
 import math
+import os
 
 # KL Divergence (for experiments)
 def kl(p, q):
@@ -11,8 +12,12 @@ def kl(p, q):
 
 # Parse Bayesian network file
 def parse_network(filename):
-    with open(filename) as f:
-        lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+    try:
+        with open(filename) as f:
+            lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+    except FileNotFoundError:
+        print(f"File not found: {filename}")
+        return [], {}, {}
 
     i = 0
     num_vars = int(lines[i])
@@ -34,16 +39,13 @@ def parse_network(filename):
     while i < len(lines):
         header = lines[i].split()
         i += 1
-
         child = header[0]
         parents = header[1:] if len(header) > 1 else []
-
         table = []
         while i < len(lines) and lines[i] and not lines[i].startswith('#'):
             table.append(list(map(float, lines[i].split())))
             i += 1
         i += 1
-
         cpts[child] = {'parents': parents, 'table': table}
 
     return vars, domains, cpts
@@ -52,6 +54,8 @@ def parse_network(filename):
 def joint_prob(assignment, vars, domains, cpts):
     p = 1.0
     for var in vars:
+        if var not in assignment:
+            return 0.0
         val = assignment[var]
         val_idx = domains[var].index(val)
         parents = cpts[var]['parents']
@@ -72,6 +76,9 @@ def joint_prob(assignment, vars, domains, cpts):
 
 # Exact inference
 def exact_inference(query, evidence, vars, domains, cpts):
+    if query not in vars:
+        print("Unknown query variable.")
+        return []
     hidden = [v for v in vars if v != query and v not in evidence]
     counts = [0.0] * len(domains[query])
 
@@ -88,7 +95,7 @@ def exact_inference(query, evidence, vars, domains, cpts):
 
     recur(0, dict(evidence))
     total = sum(counts)
-    return [round(x/total, 4) for x in counts]
+    return [round(x/total, 4) for x in counts] if total > 0 else [0.0] * len(counts)
 
 # Rejection sampling
 def rejection_sample(query, evidence, vars, domains, cpts, N):
@@ -106,8 +113,13 @@ def rejection_sample(query, evidence, vars, domains, cpts, N):
                 index = 0
                 stride = 1
                 for p in reversed(parents):
+                    if p not in sample:
+                        consistent = False
+                        break
                     index += domains[p].index(sample[p]) * stride
                     stride *= len(domains[p])
+                if not consistent:
+                    break
                 probs = table[index]
 
             r = random.random()
@@ -118,11 +130,7 @@ def rejection_sample(query, evidence, vars, domains, cpts, N):
                     sample[var] = domains[var][i]
                     break
 
-            if var in evidence and sample[var] != evidence[var]:
-                consistent = False
-                break
-
-        if consistent:
+        if consistent and all(sample.get(k) == v for k, v in evidence.items()):
             idx = domains[query].index(sample[query])
             counts[idx] += 1
 
@@ -151,7 +159,6 @@ def gibbs_sample(query, evidence, vars, domains, cpts, N, burn=100):
                 if r <= acc:
                     state[var] = val
                     break
-
         if i >= burn:
             idx = domains[query].index(state[query])
             counts[idx] += 1
@@ -164,10 +171,15 @@ def load_vector(filename):
     with open(filename) as f:
         return list(map(float, f.read().strip().split()))
 
+# Save results to file for report/logging
+def save_result(query, method, sample_count, result, kl_val=None):
+    with open("results.csv", "a") as f:
+        f.write(f"{query},{method},{sample_count},{result},{kl_val if kl_val is not None else ''}\n")
+
 # REPL interface
 def repl():
     vars, domains, cpts = [], {}, {}
-    print("BayesNet REPL. Type 'help' for commands.")
+    print("BayesNet REPL started. Type 'help' for commands.")
     while True:
         try:
             line = input("BN > ").strip()
@@ -178,7 +190,8 @@ def repl():
             elif line.startswith('load'):
                 fname = line.split(maxsplit=1)[1]
                 vars, domains, cpts = parse_network(fname)
-                print("Network loaded.")
+                if vars:
+                    print("Network loaded.")
             elif line.startswith(('xquery', 'rquery', 'gquery')):
                 parts = line.split('|')
                 left = parts[0].split()
@@ -189,13 +202,20 @@ def repl():
                     for pair in parts[1].strip().split():
                         k, v = pair.split('=')
                         evidence[k] = v
+                if query not in vars:
+                    print("Unknown query variable.")
+                    continue
                 if line.startswith('xquery'):
                     result = exact_inference(query, evidence, vars, domains, cpts)
+                    method = 'exact'
                 elif line.startswith('rquery'):
                     result = rejection_sample(query, evidence, vars, domains, cpts, count)
+                    method = 'rejection'
                 else:
                     result = gibbs_sample(query, evidence, vars, domains, cpts, count)
-                print(result)
+                    method = 'gibbs'
+                print(result, "\n")
+                save_result(query, method, count, result)
             elif line.startswith('compare'):
                 parts = line.split('with')
                 query_part = parts[0].strip().split('|')
@@ -210,12 +230,17 @@ def repl():
                 ref = load_vector(filename)
                 if method == 'x':
                     result = exact_inference(query, evidence, vars, domains, cpts)
+                    method_name = 'exact'
                 elif method == 'r':
                     result = rejection_sample(query, evidence, vars, domains, cpts, 1000)
+                    method_name = 'rejection'
                 else:
                     result = gibbs_sample(query, evidence, vars, domains, cpts, 1000)
+                    method_name = 'gibbs'
+                kl_val = round(kl(ref, result), 5)
                 print("Result:", result)
-                print("KL divergence:", round(kl(ref, result), 5))
+                print("KL divergence:", kl_val, "\n")
+                save_result(query, method_name, 1000, result, kl_val)
             elif line == 'help':
                 print("Commands:")
                 print("  load FILE")
@@ -225,9 +250,9 @@ def repl():
                 print("  compare METHOD QUERY | E1=v1 ... with FILE")
                 print("  quit")
             else:
-                print("Unknown command")
+                print("Unknown command\n")
         except Exception as e:
-            print("Error:", e)
+            print("Error:", e, "\n")
 
 if __name__ == '__main__':
     repl()
