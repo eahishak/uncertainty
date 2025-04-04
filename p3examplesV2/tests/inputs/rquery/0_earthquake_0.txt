@@ -1,0 +1,3 @@
+load earthquake.bn
+rquery Burglary
+quit

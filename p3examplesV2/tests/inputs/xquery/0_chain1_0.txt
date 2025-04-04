@@ -1,0 +1,3 @@
+load chain1.bn
+xquery X7
+quit

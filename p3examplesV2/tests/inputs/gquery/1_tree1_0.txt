@@ -1,0 +1,3 @@
+load tree1.bn
+gquery X3 | X8=0
+quit

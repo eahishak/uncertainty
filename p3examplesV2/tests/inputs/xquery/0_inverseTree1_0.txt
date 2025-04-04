@@ -1,0 +1,3 @@
+load inverseTree1.bn
+xquery X3
+quit

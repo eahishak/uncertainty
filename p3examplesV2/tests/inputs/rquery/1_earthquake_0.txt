@@ -1,0 +1,3 @@
+load earthquake.bn
+rquery JohnCalls | Earthquake=False
+quit

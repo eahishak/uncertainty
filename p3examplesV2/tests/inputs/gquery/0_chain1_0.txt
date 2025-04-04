@@ -1,0 +1,3 @@
+load chain1.bn
+gquery X7
+quit

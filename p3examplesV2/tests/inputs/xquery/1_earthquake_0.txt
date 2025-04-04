@@ -1,0 +1,3 @@
+load earthquake.bn
+xquery JohnCalls | Earthquake=False
+quit

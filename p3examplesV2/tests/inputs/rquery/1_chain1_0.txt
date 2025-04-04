@@ -1,0 +1,3 @@
+load chain1.bn
+rquery X5 | X1=1
+quit

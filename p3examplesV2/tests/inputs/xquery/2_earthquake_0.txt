@@ -1,0 +1,3 @@
+load earthquake.bn
+xquery Alarm | MaryCalls=False Burglary=True
+quit

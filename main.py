@@ -14,41 +14,60 @@ def kl(p, q):
 def parse_network(filename):
     try:
         with open(filename) as f:
-            lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+            # Read all non-empty, non-comment lines
+            lines = []
+            for line in f:
+                line = line.split('#')[0].strip() 
+                if line:  
+                    lines.append(line)
     except FileNotFoundError:
         print(f"File not found: {filename}")
         return [], {}, {}
 
-    i = 0
-    num_vars = int(lines[i])
-    i += 1
-
-    vars = []
-    domains = {}
-    while len(vars) < num_vars:
-        parts = lines[i].split()
-        var = parts[0]
-        domains[var] = parts[1:]
-        vars.append(var)
+    try:
+        i = 0
+        num_vars = int(lines[i])
         i += 1
-
-    num_cpts = int(lines[i])
-    i += 1
-    cpts = {}
-
-    while i < len(lines):
-        header = lines[i].split()
-        i += 1
-        child = header[0]
-        parents = header[1:] if len(header) > 1 else []
-        table = []
-        while i < len(lines) and lines[i] and not lines[i].startswith('#'):
-            table.append(list(map(float, lines[i].split())))
+        
+        vars = []
+        domains = {}
+        for _ in range(num_vars):
+            parts = lines[i].split()
+            vars.append(parts[0])
+            domains[parts[0]] = parts[1:]
             i += 1
-        i += 1
-        cpts[child] = {'parents': parents, 'table': table}
 
-    return vars, domains, cpts
+        num_cpts = int(lines[i])
+        i += 1
+        cpts = {}
+
+        for _ in range(num_cpts):
+            while i < len(lines) and not lines[i]:
+                i += 1
+            if i >= len(lines):
+                break
+
+            header = lines[i].split()
+            i += 1
+            child = header[0]
+            parents = header[1:] if len(header) > 1 else []
+
+            table = []
+            while i < len(lines) and lines[i] and not lines[i].startswith('#'):
+                if all(part.replace('.', '').isdigit() for part in lines[i].split()):
+                    table.append(list(map(float, lines[i].split())))
+                    i += 1
+                else:
+                    break
+
+            cpts[child] = {'parents': parents, 'table': table}
+
+        return vars, domains, cpts
+
+    except Exception as e:
+        print(f"Error parsing line {i+1}: '{lines[i] if i < len(lines) else 'EOF'}'")
+        print(f"Full error: {str(e)}")
+        return [], {}, {}
 
 # Compute joint probability
 def joint_prob(assignment, vars, domains, cpts):

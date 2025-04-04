@@ -1,0 +1,3 @@
+load tree1.bn
+xquery X1
+quit
